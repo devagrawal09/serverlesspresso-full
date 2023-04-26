@@ -200,8 +200,6 @@ fastifyApp.put("/barista/store", async (req, res) => {
   }
 });
 
-http.useNodeHandler(fastifyApp);
-
 ws.on("connected", (connection) => {
   console.log(`Client connected: ${connection.connectionId}`);
 });
@@ -224,39 +222,23 @@ ws.on("disconnected", async (connection, reason) => {
   }
 });
 
-namespace Barista {
-  export namespace Orders {
-    type View = "barista_orders";
+// type OrderEvent = {
+//   name: "created" | "updated" | "deleted";
+//   item: KeyValue<Order>;
+//   previous?: KeyValue<Order>;
+// };
+// data.on("updated:order:*", async (event) => {
+//   const { name, item, previous } = event as OrderEvent;
 
-    type Subscribe = {
-      action: "subscribe";
-      view: View;
-    };
+//   console.log(JSON.stringify({ name, item, previous, event }, null, 2));
+// });
 
-    type Unsubscribe = {
-      action: "unsubscribe";
-      view: View;
-    };
+type WsSubscription = { view: string };
 
-    type Prepare = {
-      action: "prepare_order";
-      data: string;
-    };
-
-    export type Data = KeyValue<Order>[];
-
-    export type Message = Subscribe | Unsubscribe | Prepare;
-  }
-}
-
-ws.on("message", async (connection, socketData) => {
+ws.on("message", async (connection, message: WsSubscription) => {
   // handle incoming message
-  // if the message content is JSON formatted, it is automatically parsed and passed as an object.
 
-  console.log("barista orders message", socketData);
-  const message = socketData as Barista.Orders.Message;
-
-  if (message.action === "subscribe" && message.view === "barista_orders") {
+  if (message.view === "barista_orders") {
     const orders = await data.get<Order>("order:*", { meta: true });
     connection.send({
       view: "barista_orders",
@@ -273,52 +255,56 @@ ws.on("message", async (connection, socketData) => {
       await data.set("barista_orders:subscriptions", subscriptions);
     }
   }
-
-  if (message.action === "prepare_order") {
-    console.log("preparing order", message.data);
-    const orderId = message.data;
-
-    const order = await data.get<Order>(`order:${orderId}`);
-
-    if (!order) {
-      console.log("order not found");
-      return;
-    }
-
-    if ((order as Order).status !== "placed") {
-      console.log("order not in placed state");
-      return;
-    }
-
-    console.log("setting order to prepared");
-    await data.set<Order>(`order:${orderId}`, {
-      ...order,
-      status: "prepared",
-    });
-
-    console.log("sending update to all barista clients");
-    // TODO: put this into a data.on listener you fake EDA person
-    const [subscriptions, orders] = await Promise.all([
-      data.get<string[]>("barista_orders:subscriptions"),
-      data.get<Order>("order:*", { meta: true }),
-    ]);
-
-    (subscriptions as string[]).forEach((subscription) => {
-      ws.send(subscription, {
-        view: "barista_orders",
-        data: orders,
-      });
-    });
-  }
 });
 
-// type OrderEvent = {
-//   name: "created" | "updated" | "deleted";
-//   item: KeyValue<Order>;
-//   previous?: KeyValue<Order>;
-// };
-// data.on("updated:order:*", async (event) => {
-//   const { name, item, previous } = event as OrderEvent;
+// change order status
+fastifyApp.put("/barista/orders/:id", async (req, res) => {
+  const { id } = req.params as { id: string };
+  console.log(`preparing order ${id}`);
+  const order = await data.get<Order>(`order:${id}`);
 
-//   console.log(JSON.stringify({ name, item, previous, event }, null, 2));
-// });
+  if (!order) {
+    console.log("order not found");
+    return res.status(404).send({ error: "order not found" });
+  }
+
+  if ((order as Order).status !== "placed") {
+    console.log("order invalid status");
+    return res.status(400).send({ error: "order invalid status" });
+  }
+
+  await data.set<Order>(`order:${id}`, {
+    ...order,
+    status: "prepared",
+  });
+
+  return res.status(200).send({ status: "prepared" });
+});
+
+type OrderEvent = {
+  name: "created" | "updated" | "deleted";
+  item: KeyValue<Order>;
+  previous?: KeyValue<Order>;
+};
+
+data.on("*:order:*", async (event) => {
+  const { name, item, previous } = event as OrderEvent;
+
+  console.log(JSON.stringify({ name, item, previous, event }, null, 2));
+
+  console.log("sending update to all barista clients");
+
+  const [subscriptions, orders] = await Promise.all([
+    data.get<string[]>("barista_orders:subscriptions"),
+    data.get<Order>("order:*", { meta: true }),
+  ]);
+
+  (subscriptions as string[]).forEach((subscription) => {
+    ws.send(subscription, {
+      view: "barista_orders",
+      data: orders,
+    });
+  });
+});
+
+http.useNodeHandler(fastifyApp);

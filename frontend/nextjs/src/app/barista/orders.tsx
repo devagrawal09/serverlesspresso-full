@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useEffect, useRef, useState } from "react";
 
@@ -56,17 +57,23 @@ export function BaristaOrders() {
       socket.close(1000, "Closing socket because the component unmounted");
   }, []);
 
-  function prepareOrder(order: OrderItem) {
-    console.log("Preparing order", order);
-    console.log("Sending message to socket", socketRef.current);
+  const { status, mutate: prepareOrder } = useMutation(
+    async function prepareOrder(order: OrderItem) {
+      console.log("Preparing order", order);
 
-    socketRef.current?.send(
-      JSON.stringify({
-        action: "prepare_order",
-        data: order.value.id,
-      })
-    );
-  }
+      const res = await fetch(
+        `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.value.id}`,
+        {
+          method: "PUT",
+        }
+      );
+      console.log("Response from server", res);
+      if (!res.ok) {
+        console.error("Failed to prepare order");
+        return;
+      }
+    }
+  );
 
   return (
     <>
@@ -108,8 +115,9 @@ export function BaristaOrders() {
                 <button
                   className="bg-amber-700 p-3 rounded"
                   onClick={() => prepareOrder(order)}
+                  disabled={status === "loading"}
                 >
-                  Prepared
+                  {status === "loading" ? "Preparing..." : "Prepare"}
                 </button>
               </div>
             </li>
