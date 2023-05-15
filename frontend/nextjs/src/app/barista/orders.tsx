@@ -3,36 +3,66 @@
 import { useMutation } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useEffect, useRef, useState } from "react";
-import { BaristaOrdersView, Order } from "../../../../../types/orders";
+import {
+  BaristaOrdersView,
+  Order,
+  OrderLiveViews,
+} from "../../../../../types/orders";
+
+async function prepareOrder(order: Order) {
+  console.log("Preparing order", order);
+
+  const res = await fetch(
+    `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.id}/prepare`,
+    {
+      method: "PUT",
+    }
+  );
+  console.log("Response from server", res);
+  if (!res.ok) {
+    console.error("Failed to prepare order");
+    return;
+  }
+}
+
+async function pickupOrder(order: Order) {
+  console.log("Picking up order", order);
+
+  const res = await fetch(
+    `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.id}/pickup`,
+    {
+      method: "PUT",
+    }
+  );
+  console.log("Response from server", res);
+  if (!res.ok) {
+    console.error("Failed to prepare order");
+    return;
+  }
+}
 
 export function BaristaOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>();
+
   const socketRef = useRef<WebSocket>();
-  console.log({ orders });
 
   useEffect(() => {
     const socket = new WebSocket("wss://brilliant-idea-n2c95.ampt.app");
     socketRef.current = socket;
 
+    const message: OrderLiveViews = { view: "barista_orders" };
+
     socket.addEventListener("open", () => {
       console.log("Socket opened");
-      socket.send(
-        JSON.stringify({
-          action: "subscribe",
-          view: "barista_orders",
-        })
-      );
+      socket.send(JSON.stringify(message));
     });
 
     socket.addEventListener("message", (event) => {
-      // const message = messageSchema.parse(JSON.parse(event.data));
       const data: BaristaOrdersView = JSON.parse(event.data);
-      console.log("Received message from socket", data);
+
       if (data.view !== "barista_orders") return;
       if (!data.orders) return;
-
-      console.log(data);
 
       setOrders(data.orders);
       setIsLoading(false);
@@ -42,23 +72,17 @@ export function BaristaOrders() {
       socket.close(1000, "Closing socket because the component unmounted");
   }, []);
 
-  const { status, mutate: prepareOrder } = useMutation(
-    async function prepareOrder(order: Order) {
-      console.log("Preparing order", order);
+  const {
+    status: prepareStatus,
+    mutate: prepareOrderMutation,
+    variables: prepareVariables,
+  } = useMutation(prepareOrder);
 
-      const res = await fetch(
-        `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.id}/prepare`,
-        {
-          method: "PUT",
-        }
-      );
-      console.log("Response from server", res);
-      if (!res.ok) {
-        console.error("Failed to prepare order");
-        return;
-      }
-    }
-  );
+  const {
+    status: pickupStatus,
+    mutate: pickupOrderMutation,
+    variables: pickupVariables,
+  } = useMutation(pickupOrder);
 
   return (
     <>
@@ -96,13 +120,35 @@ export function BaristaOrders() {
                     </p>
                     <p className="text-lg font-bold">Status: {order.status}</p>
                   </div>
-                  <button
-                    className="bg-amber-700 p-3 rounded"
-                    onClick={() => prepareOrder(order)}
-                    disabled={status === "loading"}
-                  >
-                    {status === "loading" ? "Preparing..." : "Prepare"}
-                  </button>
+                  {order.status === "placed" ? (
+                    <button
+                      className="bg-amber-700 p-3 rounded disabled:opacity-75"
+                      onClick={() => prepareOrderMutation(order)}
+                      disabled={
+                        prepareStatus === "loading" &&
+                        prepareVariables?.id === order.id
+                      }
+                    >
+                      {prepareStatus === "loading" &&
+                      prepareVariables?.id === order.id
+                        ? "Preparing..."
+                        : "Prepared"}
+                    </button>
+                  ) : order.status === "prepared" ? (
+                    <button
+                      className="bg-amber-700 p-3 rounded disabled:opacity-75"
+                      onClick={() => pickupOrderMutation(order)}
+                      disabled={
+                        pickupStatus === "loading" &&
+                        pickupVariables?.id === order.id
+                      }
+                    >
+                      {pickupStatus === "loading" &&
+                      pickupVariables?.id === order.id
+                        ? "Picking up..."
+                        : "Picked up"}
+                    </button>
+                  ) : null}
                 </div>
               </li>
             ))

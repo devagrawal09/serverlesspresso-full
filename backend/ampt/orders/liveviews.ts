@@ -28,6 +28,7 @@ export async function baristaView(connection: SocketConnection) {
 }
 
 export async function updateBaristaView() {
+  console.debug("updating barista view");
   const subscriptions = (await data.get<string[]>(
     "barista_orders:subscriptions"
   )) as string[];
@@ -94,6 +95,7 @@ export async function customerView(
 }
 
 export async function updateCustomerView(customerId: string) {
+  console.debug(`updating customer view for ${customerId}`);
   const subscriptions = (await data.get<CustomerSubscription[]>(
     `customer_orders:subscriptions`
   )) as CustomerSubscription[];

@@ -13,13 +13,7 @@ export default async function OrderPage({
   const data: Order = await result.json();
 
   if (result.status !== 200) {
-    console.log(data);
-
-    return (
-      <>
-        <h1>Failed to load order</h1>
-      </>
-    );
+    return <h1>Failed to load order</h1>;
   }
 
   return (

@@ -124,6 +124,7 @@ export function onOrderUpdate(
   data.on("*:order:*", ({ item }) => {
     const order = item.value as Order;
     const event = order.log[order.log.length - 1];
+    console.debug("order event", { event, order });
     callback(event, order);
   });
 }
