@@ -1,17 +1,5 @@
 import { DateTime } from "luxon";
-
-type Order = {
-  id: string;
-  userId: string;
-  status: "placed" | "prepared" | "pickedup" | "cancelled";
-};
-
-type GetResponse<T> = {
-  key: string;
-  value: T;
-  created: string;
-  modified: string;
-};
+import { Order } from "../../../../../../../types/orders";
 
 export default async function OrderPage({
   params,
@@ -22,7 +10,7 @@ export default async function OrderPage({
     `https://brilliant-idea-n2c95.ampt.app/customer/orders/${params.orderId}`
   );
 
-  const data: GetResponse<Order> = await result.json();
+  const data: Order = await result.json();
 
   if (result.status !== 200) {
     console.log(data);
@@ -50,11 +38,11 @@ export default async function OrderPage({
         </div>
         <div className="px-6 py-3">
           <p className="text-lg font-bold">
-            {DateTime.fromISO(data.created).toLocaleString(
+            {DateTime.fromISO(data.log[0].timestamp).toLocaleString(
               DateTime.DATETIME_MED
             )}
           </p>
-          <p className="text-lg font-bold">Status: {data.value.status}</p>
+          <p className="text-lg font-bold">Status: {data.status}</p>
         </div>
       </div>
     </>

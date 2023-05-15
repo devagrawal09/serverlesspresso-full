@@ -6,11 +6,12 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "ampt"
+    "start": "ampt",
+    "ampt:test": "vitest --config ./vitest.config.ts"
   },
   "dependencies": {
     "@ampt/api": "latest",
-    "@ampt/data": "^0.0.1-beta.9",
+    "@ampt/data": "^0.0.1-beta.10",
     "@fastify/cors": "^8.2.1",
     "cors": "^2.8.5",
     "fastify": "^4.15.0",
@@ -23,6 +24,8 @@
     "org": "devagrawal09223929"
   },
   "devDependencies": {
-    "@types/uuid": "^9.0.1"
+    "@faker-js/faker": "^8.0.0",
+    "@types/uuid": "^9.0.1",
+    "vitest": "^0.31.0"
   }
 }

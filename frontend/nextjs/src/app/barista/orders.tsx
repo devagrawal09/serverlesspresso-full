@@ -3,31 +3,16 @@
 import { useMutation } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useEffect, useRef, useState } from "react";
-
-type OrderItem = {
-  key: string;
-  created: string;
-  modified: string;
-  value: {
-    id: string;
-    status: string;
-    userId: string;
-  };
-};
-type OrderItemsMessage = {
-  view: "barista_orders";
-  data: {
-    items: OrderItem[];
-  };
-};
+import { BaristaOrdersView, Order } from "../../../../../types/orders";
 
 export function BaristaOrders() {
   const [isLoading, setIsLoading] = useState(true);
-  const [orders, setOrders] = useState<OrderItem[]>();
+  const [orders, setOrders] = useState<Order[]>();
   const socketRef = useRef<WebSocket>();
+  console.log({ orders });
 
   useEffect(() => {
-    const socket = new WebSocket("wss://brilliant-idea-n2c95.ampt.app/_ws");
+    const socket = new WebSocket("wss://brilliant-idea-n2c95.ampt.app");
     socketRef.current = socket;
 
     socket.addEventListener("open", () => {
@@ -42,14 +27,14 @@ export function BaristaOrders() {
 
     socket.addEventListener("message", (event) => {
       // const message = messageSchema.parse(JSON.parse(event.data));
-      const data: OrderItemsMessage = JSON.parse(event.data);
+      const data: BaristaOrdersView = JSON.parse(event.data);
       console.log("Received message from socket", data);
       if (data.view !== "barista_orders") return;
-      if (!data.data) return;
+      if (!data.orders) return;
 
       console.log(data);
 
-      setOrders(data.data.items);
+      setOrders(data.orders);
       setIsLoading(false);
     });
 
@@ -58,11 +43,11 @@ export function BaristaOrders() {
   }, []);
 
   const { status, mutate: prepareOrder } = useMutation(
-    async function prepareOrder(order: OrderItem) {
+    async function prepareOrder(order: Order) {
       console.log("Preparing order", order);
 
       const res = await fetch(
-        `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.value.id}`,
+        `https://brilliant-idea-n2c95.ampt.app/barista/orders/${order.id}/prepare`,
         {
           method: "PUT",
         }
@@ -82,46 +67,48 @@ export function BaristaOrders() {
         <p>Loading...</p>
       ) : (
         <ul>
-          {orders?.map((order) => (
-            <li
-              key={order.key}
-              className="border border-white mx-16 my-5 rounded"
-            >
-              <div className="bg-amber-700 py-6 flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://www.acouplecooks.com/wp-content/uploads/2021/08/How-to-make-espresso-009s.jpg"
-                  alt="Espresso"
-                  width={50}
-                  className="rounded-full ml-6"
-                />
-                <h2 className="text-2xl">Espresso ($4.99)</h2>
-                <p>
-                  <span className="font-bold">User ID:</span>{" "}
-                  {order.value.userId}
-                </p>
-              </div>
-              <div className="px-6 py-3 flex justify-between">
-                <div>
-                  <p className="text-lg font-bold">
-                    {DateTime.fromISO(order.created).toLocaleString(
-                      DateTime.DATETIME_MED
-                    )}
-                  </p>
-                  <p className="text-lg font-bold">
-                    Status: {order.value.status}
+          {orders?.length ? (
+            orders.map((order) => (
+              <li
+                key={order.id}
+                className="border border-white mx-16 my-5 rounded"
+              >
+                <div className="bg-amber-700 py-6 flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="https://www.acouplecooks.com/wp-content/uploads/2021/08/How-to-make-espresso-009s.jpg"
+                    alt="Espresso"
+                    width={50}
+                    className="rounded-full ml-6"
+                  />
+                  <h2 className="text-2xl">Espresso ($4.99)</h2>
+                  <p>
+                    <span className="font-bold">User ID:</span>{" "}
+                    {order.customerId}
                   </p>
                 </div>
-                <button
-                  className="bg-amber-700 p-3 rounded"
-                  onClick={() => prepareOrder(order)}
-                  disabled={status === "loading"}
-                >
-                  {status === "loading" ? "Preparing..." : "Prepare"}
-                </button>
-              </div>
-            </li>
-          ))}
+                <div className="px-6 py-3 flex justify-between">
+                  <div>
+                    <p className="text-lg font-bold">
+                      {DateTime.fromISO(order.log[0].timestamp).toLocaleString(
+                        DateTime.DATETIME_MED
+                      )}
+                    </p>
+                    <p className="text-lg font-bold">Status: {order.status}</p>
+                  </div>
+                  <button
+                    className="bg-amber-700 p-3 rounded"
+                    onClick={() => prepareOrder(order)}
+                    disabled={status === "loading"}
+                  >
+                    {status === "loading" ? "Preparing..." : "Prepare"}
+                  </button>
+                </div>
+              </li>
+            ))
+          ) : (
+            <p className="text-center">No orders</p>
+          )}
         </ul>
       )}
     </>

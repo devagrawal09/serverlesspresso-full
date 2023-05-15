@@ -2,26 +2,35 @@
 // Please report any bugs to Discord!
 
 // import { api } from "@ampt/api";
-import { KeyValue, data } from "@ampt/data";
+import { data } from "@ampt/data";
 import z from "zod";
-import { v4 as uuid } from "uuid";
 import { ws } from "@ampt/sdk";
-
 import { http } from "@ampt/sdk";
-
 import fastify from "fastify";
 import cors from "@fastify/cors";
+import {
+  OrderAlreadyPreparedError,
+  OrderNotFoundError,
+  getOrderById,
+  onOrderUpdate,
+  placeOrder,
+  prepareOrder,
+} from "./orders/domain";
+import {
+  baristaView,
+  customerView,
+  unsubscribeFromBaristaView,
+  unsubscribeFromCustomerView,
+  updateBaristaView,
+  updateCustomerView,
+} from "./orders/liveviews";
+import { OrderLiveViews } from "../../types/orders";
+
 const fastifyApp = fastify();
 
 await fastifyApp.register(cors, { origin: "*" });
 
 const placeOrderSchema = z.object({ userId: z.string() });
-
-type Order = {
-  id: string;
-  userId: string;
-  status: "placed" | "prepared" | "pickedup" | "cancelled";
-};
 
 fastifyApp.post("/customer/orders", async (req, res) => {
   try {
@@ -34,16 +43,14 @@ fastifyApp.post("/customer/orders", async (req, res) => {
     const body = req.body;
     const { userId } = placeOrderSchema.parse(body);
 
-    const orderId = uuid();
-
-    const order = await data.set<Order>(`order:${orderId}`, {
-      id: orderId,
-      userId,
-      status: "placed",
+    const order = await placeOrder({
+      customerId: userId,
+      productId: "espresso",
     });
 
     return res.status(201).send(order);
   } catch (e) {
+    console.error(e);
     return res.status(500).send({ error: e });
   }
 });
@@ -168,11 +175,15 @@ publicApi.get("/order/:id", async (event) => {
 fastifyApp.get("/customer/orders/:id", async (req, res) => {
   try {
     const { id } = req.params as { id: string };
-    const order = await data.get<Order>(`order:${id}`, { meta: true });
-    console.log(order);
+
+    const order = await getOrderById(id);
+
+    if (order instanceof OrderNotFoundError) {
+      return res.status(404).send({ error: order.message });
+    }
+    console.log("order", order);
     return res.status(200).send(order);
   } catch (e) {
-    console.log("error", e);
     return res.status(500).send({ error: e });
   }
 });
@@ -208,103 +219,40 @@ ws.on("disconnected", async (connection, reason) => {
   console.log(`Client disconnected: ${connection.connectionId}: ${reason}`);
 
   // unsubscribe from all views
-  const baristaViewSubscriptions = (await data.get(
-    "barista_orders:subscriptions"
-  )) as string[];
-
-  if (baristaViewSubscriptions) {
-    const index = baristaViewSubscriptions.indexOf(connection.connectionId);
-    if (index > -1) {
-      baristaViewSubscriptions.splice(index, 1);
-    }
-
-    await data.set("barista_orders:subscriptions", baristaViewSubscriptions);
-  }
+  unsubscribeFromBaristaView(connection);
+  unsubscribeFromCustomerView(connection);
 });
 
-// type OrderEvent = {
-//   name: "created" | "updated" | "deleted";
-//   item: KeyValue<Order>;
-//   previous?: KeyValue<Order>;
-// };
-// data.on("updated:order:*", async (event) => {
-//   const { name, item, previous } = event as OrderEvent;
-
-//   console.log(JSON.stringify({ name, item, previous, event }, null, 2));
-// });
-
-type WsSubscription = { view: string };
-
-ws.on("message", async (connection, message: WsSubscription) => {
-  // handle incoming message
-
+ws.on("message", async (connection, message: OrderLiveViews) => {
   if (message.view === "barista_orders") {
-    const orders = await data.get<Order>("order:*", { meta: true });
-    connection.send({
-      view: "barista_orders",
-      data: orders,
-    });
+    await baristaView(connection);
+  }
 
-    const subscriptions =
-      ((await data.get<string[]>(
-        "barista_orders:subscriptions"
-      )) as string[]) || [];
-
-    if (!subscriptions.includes(connection.connectionId)) {
-      subscriptions.push(connection.connectionId);
-      await data.set("barista_orders:subscriptions", subscriptions);
-    }
+  if (message.view === "customer_orders") {
+    await customerView(connection, message.customerId);
   }
 });
 
 // change order status
-fastifyApp.put("/barista/orders/:id", async (req, res) => {
+fastifyApp.put("/barista/orders/:id/prepare", async (req, res) => {
   const { id } = req.params as { id: string };
-  console.log(`preparing order ${id}`);
-  const order = await data.get<Order>(`order:${id}`);
 
-  if (!order) {
-    console.log("order not found");
-    return res.status(404).send({ error: "order not found" });
+  const order = await prepareOrder(id);
+
+  if (order instanceof OrderNotFoundError) {
+    return res.status(404).send({ error: order.message });
   }
 
-  if ((order as Order).status !== "placed") {
-    console.log("order invalid status");
-    return res.status(400).send({ error: "order invalid status" });
+  if (order instanceof OrderAlreadyPreparedError) {
+    return res.status(400).send({ error: order.message });
   }
 
-  await data.set<Order>(`order:${id}`, {
-    ...order,
-    status: "prepared",
-  });
-
-  return res.status(200).send({ status: "prepared" });
+  return res.status(200).send({ status: "prepared", order });
 });
 
-type OrderEvent = {
-  name: "created" | "updated" | "deleted";
-  item: KeyValue<Order>;
-  previous?: KeyValue<Order>;
-};
-
-data.on("*:order:*", async (event) => {
-  const { name, item, previous } = event as OrderEvent;
-
-  console.log(JSON.stringify({ name, item, previous, event }, null, 2));
-
-  console.log("sending update to all barista clients");
-
-  const [subscriptions, orders] = await Promise.all([
-    data.get<string[]>("barista_orders:subscriptions"),
-    data.get<Order>("order:*", { meta: true }),
-  ]);
-
-  (subscriptions as string[]).forEach((subscription) => {
-    ws.send(subscription, {
-      view: "barista_orders",
-      data: orders,
-    });
-  });
+onOrderUpdate(async (e, o) => {
+  updateBaristaView();
+  updateCustomerView(o.customerId);
 });
 
 http.useNodeHandler(fastifyApp);
