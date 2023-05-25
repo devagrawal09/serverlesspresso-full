@@ -1,59 +1,57 @@
-// @ampt/api is experimental and subject to change. DO NOT use this for production apps.
-// Please report any bugs to Discord!
-
 // import { api } from "@ampt/api";
-import { data } from "@ampt/data";
-import z from "zod";
 import { ws } from "@ampt/sdk";
 import { http } from "@ampt/sdk";
 import fastify from "fastify";
 import cors from "@fastify/cors";
 import {
-  OrderAlreadyPreparedError,
-  OrderNotFoundError,
-  getOrderById,
-  onOrderUpdate,
-  placeOrder,
-  prepareOrder,
-} from "./orders/domain";
-import {
-  baristaView,
-  customerView,
+  subscribeToBaristaView,
   unsubscribeFromBaristaView,
-  unsubscribeFromCustomerView,
-  updateBaristaView,
-  updateCustomerView,
-} from "./orders/liveviews";
+} from "./src/baristaLiveview";
 import { OrderLiveViews } from "../../types/orders";
+import { storefrontApi } from "./src/customerApi";
+import { baristaApi } from "./src/baristaApi";
+import {
+  unsubscribeFromCustomerView,
+  subscribeToCustomerView,
+} from "./src/customerLiveview";
+import { setupOrderSubscriptions } from "./src/subscriptions";
 
 const fastifyApp = fastify();
 
-await fastifyApp.register(cors, { origin: "*" });
+fastifyApp.register(cors, { origin: "*" });
 
-const placeOrderSchema = z.object({ userId: z.string() });
+// setup apis
+fastifyApp.register(storefrontApi, { prefix: "/customer" });
 
-fastifyApp.post("/customer/orders", async (req, res) => {
-  try {
-    const storeOpen = await data.get<boolean>("store:open");
+fastifyApp.register(baristaApi, { prefix: "/barista" });
 
-    if (!storeOpen) {
-      return res.status(400).send({ error: "Store is closed" });
-    }
+http.useNodeHandler(fastifyApp);
 
-    const body = req.body;
-    const { userId } = placeOrderSchema.parse(body);
+// setup liveviews
+ws.on("message", async (connection, message: OrderLiveViews) => {
+  if (message.view === "barista_orders") {
+    await subscribeToBaristaView(connection);
+  }
 
-    const order = await placeOrder({
-      customerId: userId,
-      productId: "espresso",
-    });
-
-    return res.status(201).send(order);
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send({ error: e });
+  if (message.view === "customer_orders") {
+    await subscribeToCustomerView(connection, message.customerId);
   }
 });
+
+ws.on("connected", (connection) => {
+  console.log(`Client connected: ${connection.connectionId}`);
+});
+
+ws.on("disconnected", async (connection, reason) => {
+  console.log(`Client disconnected: ${connection.connectionId}: ${reason}`);
+
+  // unsubscribe from all views
+  unsubscribeFromBaristaView(connection);
+  unsubscribeFromCustomerView(connection);
+});
+
+// setup event listeners
+setupOrderSubscriptions();
 
 /*
 // place order
@@ -170,89 +168,3 @@ publicApi.get("/order/:id", async (event) => {
 
   return event.status(200).body(order);
 }); */
-
-// order info for customer
-fastifyApp.get("/customer/orders/:id", async (req, res) => {
-  try {
-    const { id } = req.params as { id: string };
-
-    const order = await getOrderById(id);
-
-    if (order instanceof OrderNotFoundError) {
-      return res.status(404).send({ error: order.message });
-    }
-    console.log("order", order);
-    return res.status(200).send(order);
-  } catch (e) {
-    return res.status(500).send({ error: e });
-  }
-});
-
-// store info
-fastifyApp.get("/barista/store", async (req, res) => {
-  try {
-    const storeOpen = await data.get<boolean>("store:open");
-    return res.status(200).send({ open: storeOpen });
-  } catch (e) {
-    return res.status(500).send({ error: e });
-  }
-});
-
-// open/close store
-fastifyApp.put("/barista/store", async (req, res) => {
-  try {
-    console.log("toggling store");
-    const open = await data.get<boolean>("store:open");
-    console.log("open", open);
-    await data.set("store:open", !open);
-    return res.status(200).send({ open: !open });
-  } catch (e) {
-    return res.status(500).send({ error: e });
-  }
-});
-
-ws.on("connected", (connection) => {
-  console.log(`Client connected: ${connection.connectionId}`);
-});
-
-ws.on("disconnected", async (connection, reason) => {
-  console.log(`Client disconnected: ${connection.connectionId}: ${reason}`);
-
-  // unsubscribe from all views
-  unsubscribeFromBaristaView(connection);
-  unsubscribeFromCustomerView(connection);
-});
-
-ws.on("message", async (connection, message: OrderLiveViews) => {
-  if (message.view === "barista_orders") {
-    await baristaView(connection);
-  }
-
-  if (message.view === "customer_orders") {
-    await customerView(connection, message.customerId);
-  }
-});
-
-// change order status
-fastifyApp.put("/barista/orders/:id/prepare", async (req, res) => {
-  const { id } = req.params as { id: string };
-
-  const order = await prepareOrder(id);
-
-  if (order instanceof OrderNotFoundError) {
-    return res.status(404).send({ error: order.message });
-  }
-
-  if (order instanceof OrderAlreadyPreparedError) {
-    return res.status(400).send({ error: order.message });
-  }
-
-  return res.status(200).send({ status: "prepared", order });
-});
-
-onOrderUpdate(async (e, o) => {
-  updateBaristaView();
-  updateCustomerView(o.customerId);
-});
-
-http.useNodeHandler(fastifyApp);

@@ -6,7 +6,7 @@ import {
   getOrdersByCustomerId,
   placeOrder,
   prepareOrder,
-} from "../domain";
+} from "../orders";
 import { Order } from "../../../../types/orders";
 
 describe("orders", () => {
