@@ -1,58 +1,73 @@
-import { FastifyInstance, FastifyPluginAsync } from "fastify";
+import { RouteHandlerMethod, FastifyPluginAsync } from "fastify";
 import {
-  prepareOrder,
   OrderNotFoundError,
   OrderAlreadyPreparedError,
+  Orders,
 } from "./orders";
-import { closeStore, isStoreOpen, openStore } from "./store";
-import { Container } from "../arch";
+import { Store } from "./store";
+import { api, useCase } from "../arch";
 
-@Container("barista")
-export class BaristaAPI {
-  baristaApi(fastify: FastifyInstance) {
-    fastify.get("/barista/store", async (req, res) => {
-      try {
-        const storeOpen = await isStoreOpen();
-        return res.status(200).send({ open: storeOpen });
-      } catch (e) {
-        return res.status(500).send({ error: e });
-      }
-    });
+export const BaristaApi = api<FastifyPluginAsync>(
+  `BaristaApi`,
+  async (fastify) => {
+    const store = Store();
+    const orders = Orders();
 
-    fastify.put("/barista/store", async (req, res) => {
-      try {
-        console.log("toggling store");
-        const open = await isStoreOpen();
-        console.log("open", open);
-
-        if (open) {
-          await closeStore();
-        } else {
-          await openStore();
+    fastify.get(
+      "/barista/store",
+      useCase<RouteHandlerMethod>(`GET barista/store`, async (req, res) => {
+        try {
+          const storeOpen = await store.isStoreOpen();
+          return res.status(200).send({ open: storeOpen });
+        } catch (e) {
+          return res.status(500).send({ error: e });
         }
+      })
+    );
 
-        return res.status(200).send({ open: !open });
-      } catch (e) {
-        return res.status(500).send({ error: e });
-      }
-    });
+    fastify.put(
+      "/barista/store",
+      useCase<RouteHandlerMethod>(`PUT barista/store`, async (req, res) => {
+        try {
+          console.log("toggling store");
+          const open = await store.isStoreOpen();
+          console.log("open", open);
 
-    fastify.put("/barista/orders/:id/prepare", async (req, res) => {
-      const { id } = req.params as { id: string };
+          if (open) {
+            await store.closeStore();
+          } else {
+            await store.openStore();
+          }
 
-      const order = await prepareOrder(id);
+          return res.status(200).send({ open: !open });
+        } catch (e) {
+          return res.status(500).send({ error: e });
+        }
+      })
+    );
 
-      if (order instanceof OrderNotFoundError) {
-        return res.status(404).send({ error: order.message });
-      }
+    fastify.put(
+      "/barista/orders/:id/prepare",
+      useCase<RouteHandlerMethod>(
+        `PUT barista/orders/:id/prepare`,
+        async (req, res) => {
+          const { id } = req.params as { id: string };
 
-      if (order instanceof OrderAlreadyPreparedError) {
-        return res.status(400).send({ error: order.message });
-      }
+          const order = await orders.prepareOrder(id);
 
-      return res.status(200).send({ status: "prepared", order });
-    });
+          if (order instanceof OrderNotFoundError) {
+            return res.status(404).send({ error: order.message });
+          }
+
+          if (order instanceof OrderAlreadyPreparedError) {
+            return res.status(400).send({ error: order.message });
+          }
+
+          return res.status(200).send({ status: "prepared", order });
+        }
+      )
+    );
 
     return;
   }
-}
+);

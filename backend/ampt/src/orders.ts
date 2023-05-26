@@ -1,15 +1,22 @@
 import { data } from "@ampt/data";
 import { v4 as uuid } from "uuid";
 import { Order, OrderEvent } from "../../../types/orders";
+import { database } from "../arch/runtime";
 
-export async function getOrderById(id: string) {
+async function getOrderById(id: string) {
   const res = await data.get<Order>(`order:${id}`);
   if (!res) return new OrderNotFoundError();
 
   return res as Order;
 }
 
-export async function placeOrder(input: {
+async function getAllOrders() {
+  const res = await data.get<Order>("order:*", { meta: true });
+
+  return res.items.map((i) => i.value);
+}
+
+async function placeOrder(input: {
   productId: string;
   customerId: string;
 }): Promise<Order> {
@@ -37,7 +44,7 @@ export async function placeOrder(input: {
   return placed as Order;
 }
 
-export async function prepareOrder(id: string) {
+async function prepareOrder(id: string) {
   const order = await getOrderById(id);
 
   if (order instanceof OrderNotFoundError) return order;
@@ -56,7 +63,7 @@ export async function prepareOrder(id: string) {
   return prepared as Order;
 }
 
-export async function pickUpOrder(id: string) {
+async function pickUpOrder(id: string) {
   const order = await getOrderById(id);
 
   if (order instanceof OrderNotFoundError) return order;
@@ -75,7 +82,7 @@ export async function pickUpOrder(id: string) {
   return pickedUp as Order;
 }
 
-export async function cancelOrder(id: string) {
+async function cancelOrder(id: string) {
   const order = await getOrderById(id);
 
   if (order instanceof OrderNotFoundError) return order;
@@ -94,10 +101,13 @@ export async function cancelOrder(id: string) {
   return cancelled as Order;
 }
 
-export async function getOrdersByCustomerId(customerId: string) {
-  const orders = await data.getByLabel<Order>("label1", `orders:${customerId}`);
+async function getOrdersByCustomerId(customerId: string) {
+  const orderData = await data.getByLabel<Order>(
+    "label1",
+    `orders:${customerId}`
+  );
 
-  return (orders as any).items.map(({ key, value }) => value) as Order[];
+  return (orderData as any).items.map(({ key, value }) => value) as Order[];
 }
 
 export class OrderNotFoundError extends Error {
@@ -118,13 +128,24 @@ export class OrderCannotBePickedUp extends Error {
   }
 }
 
-export function onOrderUpdate(
-  callback: (event: OrderEvent, order: Order) => void
+function onOrderUpdate(
+  callback: (event: OrderEvent, order: Order) => Promise<void>
 ) {
-  data.on("*:order:*", ({ item }) => {
+  data.on("*:order:*", async ({ item }) => {
     const order = item.value as Order;
     const event = order.log[order.log.length - 1];
     console.debug("order event", { event, order });
-    callback(event, order);
+    return callback(event, order);
   });
 }
+
+export const Orders = database("Orders", () => ({
+  getOrderById,
+  getAllOrders,
+  placeOrder,
+  prepareOrder,
+  pickUpOrder,
+  cancelOrder,
+  getOrdersByCustomerId,
+  onOrderUpdate,
+}));

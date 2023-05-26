@@ -1,57 +1,29 @@
-// import { api } from "@ampt/api";
+import { BaristaLiveview } from "./src/baristaLiveview";
 import { ws } from "@ampt/sdk";
 import { http } from "@ampt/sdk";
 import fastify from "fastify";
 import cors from "@fastify/cors";
-import {
-  subscribeToBaristaView,
-  unsubscribeFromBaristaView,
-} from "./src/baristaLiveview";
-import { OrderLiveViews } from "../../types/orders";
-import { storefrontApi } from "./src/customerApi";
-import { baristaApi } from "./src/baristaApi";
-import {
-  unsubscribeFromCustomerView,
-  subscribeToCustomerView,
-} from "./src/customerLiveview";
-import { setupOrderSubscriptions } from "./src/subscriptions";
+import { StorefrontApi } from "./src/customerApi";
+import { BaristaApi } from "./src/baristaApi";
+import { CustomerLiveview } from "./src/customerLiveview";
 
 const fastifyApp = fastify();
 
 fastifyApp.register(cors, { origin: "*" });
 
 // setup apis
-fastifyApp.register(storefrontApi, { prefix: "/customer" });
-
-fastifyApp.register(baristaApi, { prefix: "/barista" });
-
-http.useNodeHandler(fastifyApp);
+fastifyApp.register(StorefrontApi, { prefix: "/customer" });
+fastifyApp.register(BaristaApi, { prefix: "/barista" });
 
 // setup liveviews
-ws.on("message", async (connection, message: OrderLiveViews) => {
-  if (message.view === "barista_orders") {
-    await subscribeToBaristaView(connection);
-  }
+BaristaLiveview();
+CustomerLiveview();
 
-  if (message.view === "customer_orders") {
-    await subscribeToCustomerView(connection, message.customerId);
-  }
-});
+http.useNodeHandler(fastifyApp);
 
 ws.on("connected", (connection) => {
   console.log(`Client connected: ${connection.connectionId}`);
 });
-
-ws.on("disconnected", async (connection, reason) => {
-  console.log(`Client disconnected: ${connection.connectionId}: ${reason}`);
-
-  // unsubscribe from all views
-  unsubscribeFromBaristaView(connection);
-  unsubscribeFromCustomerView(connection);
-});
-
-// setup event listeners
-setupOrderSubscriptions();
 
 /*
 // place order
@@ -168,3 +140,21 @@ publicApi.get("/order/:id", async (event) => {
 
   return event.status(200).body(order);
 }); */
+
+// api()
+//   .router("/terrible-life-choices")
+//   .post("/bulk", async (e) => {
+//     const choices = parseCsv(e.request.body);
+
+//     await Promise.all(
+//       choices.map((choice) =>
+//         events.publish("terrible-life-choices", choice).catch((err) =>
+//           // if my event bus is inaccesible life is hopeless
+//           console.error(err)
+//           // please help me logs
+//         )
+//       )
+//     );
+
+//     return e.status(201);
+//   });

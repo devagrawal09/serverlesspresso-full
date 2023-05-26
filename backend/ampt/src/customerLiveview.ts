@@ -1,75 +1,91 @@
 import { data } from "@ampt/data";
-import { type SocketConnection, ws } from "@ampt/sdk";
-import { getOrdersByCustomerId } from "./orders";
-import { CustomerOrdersView } from "../../../types/orders";
+import { ws } from "@ampt/sdk";
+import { Orders } from "./orders";
+import { CustomerOrdersView, OrderLiveViews } from "../../../types/orders";
+import { database, liveview } from "../arch/runtime";
 
 type CustomerSubscription = { customerId: string; connectionId: string };
 
-export async function subscribeToCustomerView(
-  connection: SocketConnection,
-  customerId: string
-) {
-  const subscriptions = ((await data.get<CustomerSubscription[]>(
-    `customer_orders:subscriptions`
-  )) ?? []) as CustomerSubscription[];
+const CustomerSubscriptions = database("customer_orders:subscriptions", () => ({
+  async get() {
+    return ((await data.get<CustomerSubscription[]>(
+      `customer_orders:subscriptions`
+    )) ?? []) as CustomerSubscription[];
+  },
 
-  if (
-    !subscriptions.find(
-      (s) =>
-        s.customerId === customerId &&
-        s.connectionId === connection.connectionId
-    )
-  ) {
-    subscriptions.push({ customerId, connectionId: connection.connectionId });
-    await data.set(`customer_orders:subscriptions`, subscriptions);
-  }
+  async set(subscriptions: CustomerSubscription[]) {
+    return await data.set(`customer_orders:subscriptions`, subscriptions);
+  },
+}));
 
-  const orders = await getOrdersByCustomerId(customerId);
+export const CustomerLiveview = liveview("customerLiveview", () => {
+  const orders = Orders();
+  const customerSubscriptions = CustomerSubscriptions();
 
-  const message: CustomerOrdersView = {
-    view: "customer_orders",
-    orders,
-    customerId,
-  };
+  ws.on("message", async (connection, message: OrderLiveViews) => {
+    if (message.view === "customer_orders") {
+      const subscriptions = await customerSubscriptions.get();
 
-  await connection.send(message);
-}
+      const customerId = message.customerId;
 
-export async function updateCustomerView(customerId: string) {
-  console.debug(`updating customer view for ${customerId}`);
-  const subscriptions = (await data.get<CustomerSubscription[]>(
-    `customer_orders:subscriptions`
-  )) as CustomerSubscription[];
+      if (
+        !subscriptions.find(
+          (s) =>
+            s.customerId === customerId &&
+            s.connectionId === connection.connectionId
+        )
+      ) {
+        subscriptions.push({
+          customerId,
+          connectionId: connection.connectionId,
+        });
+        await customerSubscriptions.set(subscriptions);
+      }
 
-  if (!subscriptions?.length) return;
+      const ordersData = await orders.getOrdersByCustomerId(customerId);
 
-  const orders = await getOrdersByCustomerId(customerId);
+      const send: CustomerOrdersView = {
+        view: "customer_orders",
+        orders: ordersData,
+        customerId,
+      };
 
-  const message: CustomerOrdersView = {
-    view: "customer_orders",
-    orders,
-    customerId,
-  };
+      await connection.send(send);
+    }
+  });
 
-  await Promise.all(
-    subscriptions
-      .filter((s) => s.customerId === customerId)
-      .map((s) => ws.send(s.connectionId, message))
-  );
-}
+  ws.on("disconnected", async (connection, reason) => {
+    console.log(`Client disconnected: ${connection.connectionId}: ${reason}`);
+    const subscriptions = await customerSubscriptions.get();
 
-export async function unsubscribeFromCustomerView(
-  connection: SocketConnection
-) {
-  const subscriptions = (await data.get<CustomerSubscription[]>(
-    `customer_orders:subscriptions`
-  )) as CustomerSubscription[];
+    if (!subscriptions?.length) return;
 
-  if (!subscriptions?.length) return;
+    const remaining = subscriptions.filter(
+      (s) => s.connectionId !== connection.connectionId
+    );
 
-  const remaining = subscriptions.filter(
-    (s) => s.connectionId !== connection.connectionId
-  );
+    await customerSubscriptions.set(remaining);
+  });
 
-  await data.set(`customer_orders:subscriptions`, remaining);
-}
+  orders.onOrderUpdate(async (e, o) => {
+    const customerId = o.customerId;
+    console.debug(`updating customer view for ${customerId}`);
+    const subscriptions = await customerSubscriptions.get();
+
+    if (!subscriptions?.length) return;
+
+    const ordersData = await orders.getOrdersByCustomerId(customerId);
+
+    const message: CustomerOrdersView = {
+      view: "customer_orders",
+      orders: ordersData,
+      customerId,
+    };
+
+    await Promise.all(
+      subscriptions
+        .filter((s) => s.customerId === customerId)
+        .map((s) => ws.send(s.connectionId, message))
+    );
+  });
+});

@@ -1,58 +1,72 @@
 import { data } from "@ampt/data";
-import { type SocketConnection, ws } from "@ampt/sdk";
-import { BaristaOrdersView, Order } from "../../../types/orders";
+import { ws } from "@ampt/sdk";
+import { BaristaOrdersView, OrderLiveViews } from "../../../types/orders";
+import { database, liveview } from "../arch/runtime";
+import { Orders } from "./orders";
 
-export async function subscribeToBaristaView(connection: SocketConnection) {
-  const subscriptions = ((await data.get<string[]>(
-    "barista_orders:subscriptions"
-  )) ?? []) as string[];
+const BaristaSubscriptions = database("barista_orders:subscriptions", () => ({
+  async get() {
+    return ((await data.get<string[]>("barista_orders:subscriptions")) ??
+      []) as string[];
+  },
 
-  if (!subscriptions.includes(connection.connectionId)) {
-    subscriptions.push(connection.connectionId);
-    await data.set("barista_orders:subscriptions", subscriptions);
-  }
+  async set(subscriptions: string[]) {
+    return data.set("barista_orders:subscriptions", subscriptions);
+  },
+}));
 
-  const orders = await data.get<Order>("order:*", { meta: true });
+export const BaristaLiveview = liveview(`baristaLiveview`, () => {
+  const customerSubscriptions = BaristaSubscriptions();
+  const orders = Orders();
 
-  const message: BaristaOrdersView = {
-    view: "barista_orders",
-    orders: orders.items.map((i) => i.value),
-  };
+  ws.on("message", async (connection, message: OrderLiveViews) => {
+    if (message.view === "barista_orders") {
+      const subscriptions = await customerSubscriptions.get();
 
-  await connection.send(message);
-}
+      if (!subscriptions.includes(connection.connectionId)) {
+        subscriptions.push(connection.connectionId);
+        await customerSubscriptions.set(subscriptions);
+      }
 
-export async function updateBaristaView() {
-  console.debug("updating barista view");
-  const subscriptions = (await data.get<string[]>(
-    "barista_orders:subscriptions"
-  )) as string[];
+      const ordersData = await orders.getAllOrders();
 
-  if (!subscriptions?.length) return;
+      const message: BaristaOrdersView = {
+        view: "barista_orders",
+        orders: ordersData,
+      };
 
-  const orders = await data.get<Order>("order:*", { meta: true });
+      await connection.send(message);
+    }
+  });
 
-  const message: BaristaOrdersView = {
-    view: "barista_orders",
-    orders: orders.items.map((i) => i.value),
-  };
+  ws.on("disconnected", async (connection, reason) => {
+    const subscriptions = await customerSubscriptions.get();
 
-  await Promise.all(
-    subscriptions.map((connectionId) => ws.send(connectionId, message))
-  );
-}
+    if (!subscriptions?.length) return;
 
-export async function unsubscribeFromBaristaView(connection: SocketConnection) {
-  const subscriptions = (await data.get<string[]>(
-    "barista_orders:subscriptions"
-  )) as string[];
+    const index = subscriptions.indexOf(connection.connectionId);
 
-  if (!subscriptions?.length) return;
+    if (index > -1) {
+      subscriptions.splice(index, 1);
+      await customerSubscriptions.set(subscriptions);
+    }
+  });
 
-  const index = subscriptions.indexOf(connection.connectionId);
+  orders.onOrderUpdate(async (e, o) => {
+    console.debug("updating barista view");
+    const subscriptions = await customerSubscriptions.get();
 
-  if (index > -1) {
-    subscriptions.splice(index, 1);
-    await data.set("barista_orders:subscriptions", subscriptions);
-  }
-}
+    if (!subscriptions?.length) return;
+
+    const ordersData = await orders.getAllOrders();
+
+    const message: BaristaOrdersView = {
+      view: "barista_orders",
+      orders: ordersData,
+    };
+
+    await Promise.all(
+      subscriptions.map((connectionId) => ws.send(connectionId, message))
+    );
+  });
+});
