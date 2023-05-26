@@ -1,10 +1,9 @@
 import { data } from "@ampt/data";
 import { ws } from "@ampt/sdk";
 import { BaristaOrdersView, OrderLiveViews } from "../../../types/orders";
-import { database, liveview } from "../arch/runtime";
 import { Orders } from "./orders";
 
-const BaristaSubscriptions = database("barista_orders:subscriptions", () => ({
+const BaristaSubscriptions = {
   async get() {
     return ((await data.get<string[]>("barista_orders:subscriptions")) ??
       []) as string[];
@@ -13,11 +12,11 @@ const BaristaSubscriptions = database("barista_orders:subscriptions", () => ({
   async set(subscriptions: string[]) {
     return data.set("barista_orders:subscriptions", subscriptions);
   },
-}));
+};
 
-export const BaristaLiveview = liveview(`baristaLiveview`, () => {
-  const customerSubscriptions = BaristaSubscriptions();
-  const orders = Orders();
+export const BaristaLiveview = () => {
+  const customerSubscriptions = BaristaSubscriptions;
+  const orders = Orders;
 
   ws.on("message", async (connection, message: OrderLiveViews) => {
     if (message.view === "barista_orders") {
@@ -69,4 +68,4 @@ export const BaristaLiveview = liveview(`baristaLiveview`, () => {
       subscriptions.map((connectionId) => ws.send(connectionId, message))
     );
   });
-});
+};

@@ -1,7 +1,6 @@
 import { data } from "@ampt/data";
 import { v4 as uuid } from "uuid";
 import { Order, OrderEvent } from "../../../types/orders";
-import { database } from "../arch/runtime";
 
 async function getOrderById(id: string) {
   const res = await data.get<Order>(`order:${id}`);
@@ -139,7 +138,7 @@ function onOrderUpdate(
   });
 }
 
-export const Orders = database("Orders", () => ({
+export const Orders = {
   getOrderById,
   getAllOrders,
   placeOrder,
@@ -148,4 +147,4 @@ export const Orders = database("Orders", () => ({
   cancelOrder,
   getOrdersByCustomerId,
   onOrderUpdate,
-}));
+};

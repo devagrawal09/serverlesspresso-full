@@ -2,11 +2,10 @@ import { data } from "@ampt/data";
 import { ws } from "@ampt/sdk";
 import { Orders } from "./orders";
 import { CustomerOrdersView, OrderLiveViews } from "../../../types/orders";
-import { database, liveview } from "../arch/runtime";
 
 type CustomerSubscription = { customerId: string; connectionId: string };
 
-const CustomerSubscriptions = database("customer_orders:subscriptions", () => ({
+const CustomerSubscriptions = {
   async get() {
     return ((await data.get<CustomerSubscription[]>(
       `customer_orders:subscriptions`
@@ -16,11 +15,11 @@ const CustomerSubscriptions = database("customer_orders:subscriptions", () => ({
   async set(subscriptions: CustomerSubscription[]) {
     return await data.set(`customer_orders:subscriptions`, subscriptions);
   },
-}));
+};
 
-export const CustomerLiveview = liveview("customerLiveview", () => {
-  const orders = Orders();
-  const customerSubscriptions = CustomerSubscriptions();
+export const CustomerLiveview = () => {
+  const orders = Orders;
+  const customerSubscriptions = CustomerSubscriptions;
 
   ws.on("message", async (connection, message: OrderLiveViews) => {
     if (message.view === "customer_orders") {
@@ -88,4 +87,4 @@ export const CustomerLiveview = liveview("customerLiveview", () => {
         .map((s) => ws.send(s.connectionId, message))
     );
   });
-});
+};

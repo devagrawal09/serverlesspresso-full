@@ -1,5 +1,4 @@
 import { data } from "@ampt/data";
-import { database } from "../arch";
 
 async function isStoreOpen() {
   const res = await data.get<boolean>("store:open");
@@ -19,9 +18,9 @@ function onStoreUpdate(cb: (open: boolean) => void) {
   return data.on("*:store:open", ({ item }) => cb(item.value as boolean));
 }
 
-export const Store = database("Store", () => ({
+export const Store = {
   isStoreOpen,
   openStore,
   closeStore,
   onStoreUpdate,
-}));
+};
