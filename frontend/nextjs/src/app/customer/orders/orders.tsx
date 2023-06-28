@@ -2,66 +2,21 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { DateTime } from "luxon";
-import { useEffect, useRef, useState } from "react";
-import {
-  CustomerOrdersView,
-  Order,
-  OrderLiveViews,
-} from "../../../../../../types/orders";
+import { useEffect, useState } from "react";
+import { Order } from "../../../../../../types/orders";
+import { client } from "@/app/client";
 
 export function CustomerOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>();
-  const socketRef = useRef<WebSocket>();
 
-  useEffect(() => {
-    const socket = new WebSocket("wss://brilliant-idea-n2c95.ampt.app/");
-    socketRef.current = socket;
-
-    socket.addEventListener("open", () => {
-      console.log("Socket opened");
-
-      const message: OrderLiveViews = {
-        view: "customer_orders",
-        customerId: "devagrawal09",
-      };
-
-      socket.send(JSON.stringify(message));
-    });
-
-    socket.addEventListener("message", (event) => {
-      const data: CustomerOrdersView = JSON.parse(event.data);
-
-      console.log("Received message from socket", data);
-      if (data.view !== "customer_orders") return;
-      if (!data.orders) return;
-
-      console.log(data);
-
-      setOrders(data.orders);
-      setIsLoading(false);
-    });
-
-    return () =>
-      socket.close(1000, "Closing socket because the component unmounted");
-  }, []);
+  useEffect(
+    () => client.customerLiveview.subscribe(`devagrawal09`, setOrders),
+    []
+  );
 
   const { status, mutate: cancelOrder } = useMutation(
-    async function cancelOrder(order: Order) {
-      console.log("Preparing order", order);
-
-      const res = await fetch(
-        `https://brilliant-idea-n2c95.ampt.app/customer/orders/${order.id}/cancel`,
-        {
-          method: "PUT",
-        }
-      );
-      console.log("Response from server", res);
-      if (!res.ok) {
-        console.error("Failed to prepare order");
-        return;
-      }
-    }
+    client.customer.cancelOrder
   );
 
   return (
@@ -100,7 +55,7 @@ export function CustomerOrders() {
                 </div>
                 <button
                   className="bg-amber-700 p-3 rounded"
-                  onClick={() => cancelOrder(order)}
+                  onClick={() => cancelOrder(order.id)}
                   disabled={status === "loading"}
                 >
                   {status === "loading" ? "Cancelling..." : "Cancel"}

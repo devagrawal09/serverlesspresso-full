@@ -1,14 +1,13 @@
 import { DateTime } from "luxon";
 import { Order } from "../../../../../../../types/orders";
+import { client } from "@/app/client";
 
 export default async function OrderPage({
   params,
 }: {
   params: { orderId: string };
 }) {
-  const result = await fetch(
-    `https://brilliant-idea-n2c95.ampt.app/customer/orders/${params.orderId}`
-  );
+  const result = await client.customer.getOrder(params.orderId);
 
   const data: Order = await result.json();
 

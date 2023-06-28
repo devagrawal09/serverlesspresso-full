@@ -3,6 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { client } from "../client";
 
 type Order = {
   id: string;
@@ -18,27 +19,7 @@ export const OrderEspresso = () => {
     setOrdering(true);
     const userId = `devagrawal09`;
 
-    const order = { userId };
-
-    const result = await fetch(
-      `https://brilliant-idea-n2c95.ampt.app/customer/orders`,
-      {
-        method: `POST`,
-        body: JSON.stringify(order),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const data: Order = await result.json();
-
-    if (result.status !== 201) {
-      console.log(data);
-      throw new Error(
-        `Failed to place order: ${result.status} ${result.statusText}`
-      );
-    }
+    const data = await client.customer.placeOrder(userId);
 
     router.push(`/customer/orders/${data.id}`);
   });

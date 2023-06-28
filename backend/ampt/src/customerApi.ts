@@ -1,11 +1,15 @@
 import { FastifyPluginAsync } from "fastify";
-import { OrderNotFoundError, Orders } from "./orders";
+import {
+  OrderAlreadyPreparedError,
+  OrderNotFoundError,
+  Orders,
+} from "./orders";
 import { z } from "zod";
 import { Store } from "./store";
 
 const placeOrderSchema = z.object({ userId: z.string() });
 
-export const StorefrontApi: FastifyPluginAsync = async (fastify) => {
+export const CustomerApi: FastifyPluginAsync = async (fastify) => {
   const store = Store;
   const orders = Orders;
 
@@ -42,6 +46,26 @@ export const StorefrontApi: FastifyPluginAsync = async (fastify) => {
         return res.status(404).send({ error: order.message });
       }
       console.log("order", order);
+      return res.status(200).send(order);
+    } catch (e) {
+      return res.status(500).send({ error: e });
+    }
+  });
+
+  fastify.delete("/orders/:id", async (req, res) => {
+    try {
+      const { id } = req.params as { id: string };
+
+      const order = await orders.cancelOrder(id);
+
+      if (order instanceof OrderNotFoundError) {
+        return res.status(404).send({ error: order.message });
+      }
+
+      if (order instanceof OrderAlreadyPreparedError) {
+        return res.status(400).send({ error: order.message });
+      }
+
       return res.status(200).send(order);
     } catch (e) {
       return res.status(500).send({ error: e });
