@@ -1,25 +1,71 @@
 import fastify, { InjectOptions } from "fastify";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createServerlesspressoClient } from "../../../../frontend/sdk";
-import { Order } from "../../../../types/orders";
+import {
+  BaristaOrdersView,
+  CustomerOrderView,
+  Order,
+  OrderLiveViews,
+} from "../../../../types/orders";
 import { BaristaApi } from "../baristaApi";
 import { CustomerApi } from "../customerApi";
+import { data } from "@ampt/data";
+import { Subject } from "rxjs";
+import { BaristaLiveview } from "../baristaLiveview";
+import { CustomerLiveview } from "../customerLiveview";
 
 const fastifyApp = fastify();
 fastifyApp.register(CustomerApi, { prefix: "/customer" });
 fastifyApp.register(BaristaApi, { prefix: "/barista" });
 
-const client = createServerlesspressoClient("", async (url, options) => {
-  const res = await fastifyApp.inject({
-    url,
-    method: (options?.method as InjectOptions["method"]) || "GET",
-    payload: options?.body ? JSON.parse(options.body as string) : undefined,
-  });
-  if (res.statusCode >= 400) {
-    throw new Error(res.payload);
-  }
-  return new Response(res.payload, { status: res.statusCode });
+const serverToClient = new Subject<BaristaOrdersView | CustomerOrderView>();
+const clientToServer = new Subject<OrderLiveViews | "close">();
+const clientId = "test-client-id";
+
+BaristaLiveview({
+  async send(connection, message) {
+    serverToClient.next(message);
+  },
+  on(cb) {
+    clientToServer.subscribe((m) => cb(clientId, m));
+  },
 });
+
+CustomerLiveview({
+  async send(connection, message) {
+    serverToClient.next(message);
+  },
+  on(cb) {
+    clientToServer.subscribe((m) => cb(clientId, m));
+  },
+});
+
+const client = createServerlesspressoClient(
+  "",
+  "ws://localhost:3002",
+  async (url, options) => {
+    const res = await fastifyApp.inject({
+      url,
+      method: (options?.method as InjectOptions["method"]) || "GET",
+      payload: options?.body ? JSON.parse(options.body as string) : undefined,
+    });
+    if (res.statusCode >= 400) {
+      throw new Error(res.payload);
+    }
+    return new Response(res.payload, { status: res.statusCode });
+  },
+  () => {
+    function on(cb: (m) => void) {
+      serverToClient.subscribe(cb);
+    }
+
+    function send(m: OrderLiveViews | "close") {
+      clientToServer.next(m);
+    }
+
+    return { on, send };
+  }
+);
 
 const customerId = "123";
 const productId = "456";
@@ -30,29 +76,6 @@ async function ensureStoreIsOpen() {
     await client.barista.toggleStore();
   }
 }
-
-const withSubscription = async <T, D>(
-  given: () => D | Promise<D>,
-  when: (data: D) => Promise<any>,
-  then: (data: T) => any,
-  sub: (cb: (data: T) => void) => () => void
-) =>
-  new Promise(async (res) => {
-    let requestPlaced = false;
-
-    const cleanup = sub((orders) => {
-      if (requestPlaced) {
-        then(orders);
-
-        cleanup();
-        res(true);
-      }
-    });
-    const data = await given();
-    const promise = when(data);
-    requestPlaced = true;
-    await promise;
-  });
 
 describe("serverlesspresso", () => {
   beforeEach(ensureStoreIsOpen);
@@ -198,18 +221,26 @@ describe("serverlesspresso", () => {
   });
 
   describe("barista view", () => {
-    test.skip("placed order shows up in barista's orders", () =>
+    beforeEach(async () => {
+      const orders = await data.get<Order>("order:*", { meta: true });
+      (await orders.items.length)
+        ? data.remove(orders.items.map((o) => o.key))
+        : null;
+    });
+
+    test("placed order shows up in barista's orders", () =>
       withSubscription(
-        () => {},
+        async () => {},
         () => client.customer.placeOrder(customerId, productId),
         (orders: Order[]) => {
+          // console.log({ orders });
           expect(orders).toHaveLength(1);
           expect(orders[0].status).toBe("placed");
         },
         (cb) => client.baristaLiveview.subscribe(cb)
       ));
 
-    test.skip("cancelled order shows up in barista's orders", () =>
+    test("cancelled order shows up in barista's orders", () =>
       withSubscription(
         () => client.customer.placeOrder(customerId, productId),
         (order) => client.barista.cancelOrder(order.id),
@@ -220,7 +251,7 @@ describe("serverlesspresso", () => {
         (cb) => client.baristaLiveview.subscribe(cb)
       ));
 
-    test.skip("preparing order shows up in barista's orders", () =>
+    test("preparing order shows up in barista's orders", () =>
       withSubscription(
         () => client.customer.placeOrder(customerId, productId),
         (order) => client.barista.markOrderAsPreparing(order.id),
@@ -231,7 +262,7 @@ describe("serverlesspresso", () => {
         (cb) => client.baristaLiveview.subscribe(cb)
       ));
 
-    test.skip("prepared order shows up in barista's orders", () =>
+    test("prepared order shows up in barista's orders", () =>
       withSubscription(
         async () => {
           const order = await client.customer.placeOrder(customerId, productId);
@@ -245,7 +276,7 @@ describe("serverlesspresso", () => {
         (cb) => client.baristaLiveview.subscribe(cb)
       ));
 
-    test.skip("picked up order shows up in barista's orders", () =>
+    test("picked up order shows up in barista's orders", () =>
       withSubscription(
         async function () {
           const order = await client.customer.placeOrder(customerId, productId);
@@ -264,17 +295,25 @@ describe("serverlesspresso", () => {
   });
 
   describe("customer view", () => {
-    test.skip("customer is notified when order is preparing", () =>
+    beforeEach(async () => {
+      const orders = await data.get<Order>("order:*", { meta: true });
+      (await orders.items.length)
+        ? data.remove(orders.items.map((o) => o.key))
+        : null;
+    });
+
+    test("customer is notified when order is preparing", () =>
       withSubscription(
         () => client.customer.placeOrder(customerId, productId),
         (order) => client.barista.markOrderAsPreparing(order.id),
         (order: Order) => {
           expect(order.status).toBe("preparing");
         },
-        (cb) => client.customerLiveview.subscribe(customerId, cb)
+        (cb, order) =>
+          client.customerLiveview.subscribe(customerId, order.id, cb)
       ));
 
-    test.skip("customer is notified when order is prepared", () =>
+    test("customer is notified when order is prepared", () =>
       withSubscription(
         async () => {
           const order = await client.customer.placeOrder(customerId, productId);
@@ -284,10 +323,11 @@ describe("serverlesspresso", () => {
         (order: Order) => {
           expect(order.status).toBe("prepared");
         },
-        (cb) => client.customerLiveview.subscribe(customerId, cb)
+        (cb, order) =>
+          client.customerLiveview.subscribe(customerId, order.id, cb)
       ));
 
-    test.skip("customer is notified when order is picked up", () =>
+    test("customer is notified when order is picked up", () =>
       withSubscription(
         async () => {
           const order = await client.customer.placeOrder(customerId, productId);
@@ -295,10 +335,40 @@ describe("serverlesspresso", () => {
           return client.barista.markOrderAsPrepared(order.id);
         },
         (order) => client.barista.markOrderAsPickedUp(order.id),
-        (order: Order) => {
+        (order: Order, d) => {
           expect(order.status).toBe("picked up");
         },
-        (cb) => client.customerLiveview.subscribe(customerId, cb)
+        (cb, order) =>
+          client.customerLiveview.subscribe(customerId, order.id, cb)
       ));
   });
 });
+
+const withSubscription = async <T, D>(
+  given: () => Promise<D>,
+  when: (data: D) => Promise<any>,
+  then: (view: T, data: D) => any,
+  sub: (cb: (view: T) => void, data: D) => () => void
+) =>
+  new Promise((res) => {
+    let requestPlaced = false;
+    given().then(async (data) => {
+      const cleanup = sub((view) => {
+        if (requestPlaced) {
+          requestPlaced = false;
+          // console.log(`got the final event`);
+          then(view, data);
+
+          cleanup();
+          res(true);
+        } else {
+          expect(view).toBeDefined();
+        }
+      }, data);
+
+      const promise = await when(data);
+      requestPlaced = true;
+      return promise;
+    });
+    // .then((response) => console.log({ response }));
+  });

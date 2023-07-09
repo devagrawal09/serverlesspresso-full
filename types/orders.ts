@@ -48,7 +48,7 @@ export type OrderEvent =
 
 export type OrderLiveViews =
   | { view: "barista_orders" }
-  | { view: "customer_orders"; customerId: string };
+  | { view: "customer_order"; customerId: string; orderId: string };
 
 export type BaristaOrdersView = {
   view: "barista_orders";

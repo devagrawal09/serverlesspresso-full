@@ -2,6 +2,9 @@ import { data } from "@ampt/data";
 import { v4 as uuid } from "uuid";
 import { Order, OrderEvent } from "../../../types/orders";
 
+type Handler = (event: OrderEvent, order: Order) => Promise<void>;
+const handlers: Set<Handler> = new Set();
+
 async function getOrderById(id: string) {
   const res = await data.get<Order>(`order:${id}`);
   if (!res) return new OrderNotFoundError();
@@ -39,6 +42,7 @@ async function placeOrder(input: {
   const placed = await data.set<Order>(`order:${order.id}`, order, {
     label1: `orders:${input.customerId}`,
   });
+  handlers.forEach((h) => h(order.log[order.log.length - 1], order));
 
   return placed as Order;
 }
@@ -59,6 +63,7 @@ async function markOrderAsPreparing(id: string) {
 
   const preparing = await data.set<Order>(`order:${id}`, order);
 
+  handlers.forEach((h) => h(order.log[order.log.length - 1], order));
   return preparing as Order;
 }
 
@@ -78,6 +83,7 @@ async function markOrderAsPrepared(id: string) {
 
   const prepared = await data.set<Order>(`order:${id}`, order);
 
+  handlers.forEach((h) => h(order.log[order.log.length - 1], order));
   return prepared as Order;
 }
 
@@ -97,6 +103,7 @@ async function markOrderAsPickedUp(id: string) {
 
   const pickedUp = await data.set<Order>(`order:${id}`, order);
 
+  handlers.forEach((h) => h(order.log[order.log.length - 1], order));
   return pickedUp as Order;
 }
 
@@ -117,6 +124,7 @@ async function cancelOrder(id: string) {
 
   const cancelled = await data.set<Order>(`order:${id}`, order);
 
+  handlers.forEach((h) => h(order.log[order.log.length - 1], order));
   return cancelled as Order;
 }
 
@@ -129,11 +137,11 @@ async function getOrdersByCustomerId(customerId: string) {
   return (orderData as any).items.map(({ key, value }) => value) as Order[];
 }
 
-async function getCurrentOrderForCustomer(customerId: string) {
-  const orders = await getOrdersByCustomerId(customerId);
+// async function getCurrentOrderForCustomer(customerId: string) {
+//   const orders = await getOrdersByCustomerId(customerId);
 
-  return orders.find((order) => order.status !== "picked up");
-}
+//   return orders.find((order) => order.status !== "picked up");
+// }
 
 export class OrderNotFoundError extends Error {
   constructor() {
@@ -171,15 +179,15 @@ export class OrderAlreadyCancelled extends Error {
   }
 }
 
-function onOrderUpdate(
-  callback: (event: OrderEvent, order: Order) => Promise<void>
-) {
-  data.on("*:order:*", async ({ item }) => {
-    const order = item.value as Order;
-    const event = order.log[order.log.length - 1];
-    console.debug("order event", { event, order });
-    return callback(event, order);
-  });
+function onOrderUpdate(callback: Handler) {
+  // data.on("*:order:*", async ({ item }) => {
+  //   const order = item.value as Order;
+  //   const event = order.log[order.log.length - 1];
+  //   console.log("order event", { event, order });
+  //   return callback(event, order);
+  // });
+
+  handlers.add(callback);
 }
 
 export const Orders = {
@@ -191,6 +199,6 @@ export const Orders = {
   markOrderAsPickedUp,
   cancelOrder,
   getOrdersByCustomerId,
-  getCurrentOrderForCustomer,
+  // getCurrentOrderForCustomer,
   onOrderUpdate,
 };

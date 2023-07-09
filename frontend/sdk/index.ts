@@ -13,6 +13,27 @@ async function myFetch(url: string, options?: RequestInit) {
   return res;
 }
 
+function myWs(url: string) {
+  const socket = new WebSocket(url);
+
+  socket.addEventListener("open", () => {
+    console.log("connected");
+  });
+
+  function on(cb: (m) => void) {
+    socket.addEventListener("message", (e) => {
+      const data = JSON.parse(e.data);
+      cb(data);
+    });
+  }
+
+  function send(m: OrderLiveViews | "close") {
+    socket.send(JSON.stringify(m));
+  }
+
+  return { on, send };
+}
+
 function baristaApiClient(url: string, f: typeof myFetch) {
   return {
     async getStore() {
@@ -31,25 +52,25 @@ function baristaApiClient(url: string, f: typeof myFetch) {
       const res = await f(`${url}/barista/preparing/${id}`, {
         method: "PUT",
       });
-      return await res.json();
+      return (await res.json()) as Order;
     },
     async markOrderAsPrepared(id: string) {
       const res = await f(`${url}/barista/prepared/${id}`, {
         method: "PUT",
       });
-      return await res.json();
+      return (await res.json()) as Order;
     },
     async markOrderAsPickedUp(id: string) {
       const res = await f(`${url}/barista/picked-up/${id}`, {
         method: "PUT",
       });
-      return await res.json();
+      return (await res.json()) as Order;
     },
     async cancelOrder(id: string) {
       const res = await f(`${url}/barista/cancel/${id}`, {
         method: "PUT",
       });
-      return await res.json();
+      return (await res.json()) as Order;
     },
   };
 }
@@ -84,81 +105,64 @@ function customerApiClient(url: string, f: typeof myFetch) {
   return { placeOrder, getOrder, cancelOrder, getOrders };
 }
 
-function customerLiveview(url: string) {
+function customerLiveview(
+  on: (cb: (m: CustomerOrderView) => void) => void,
+  send: (m: OrderLiveViews | "close") => void
+) {
   return {
-    subscribe(customerId: string, callback: (order: Order) => void) {
-      // replace http with ws or https with wss
-      const wsUrl = url.replace(/^http/, "ws");
-      const socket = new WebSocket(wsUrl);
+    subscribe(
+      customerId: string,
+      orderId: string,
+      callback: (order: Order) => void
+    ) {
+      send({ view: "customer_order", customerId, orderId });
 
-      socket.addEventListener("open", () => {
-        console.log("Socket opened");
-
-        const message: OrderLiveViews = {
-          view: "customer_orders",
-          customerId,
-        };
-
-        socket.send(JSON.stringify(message));
-      });
-
-      socket.addEventListener("message", (event) => {
-        const data: CustomerOrderView = JSON.parse(event.data);
-
-        console.log("Received message from socket", data);
+      on((data) => {
+        // console.log("Received message from socket", data);
         if (data.view !== "customer_order") return;
         if (!data.order) return;
-
-        console.log(data);
+        if (data.order.id !== orderId) return;
 
         callback(data.order);
       });
 
-      return () => socket.close(1000, "Cleanup");
+      return () => send("close");
     },
   };
 }
 
-function baristaLiveview(url: string) {
+function baristaLiveview(
+  on: (cb: (m: BaristaOrdersView) => void) => void,
+  send: (m: OrderLiveViews | "close") => void
+) {
   return {
     subscribe(callback: (orders: Order[]) => void) {
-      // replace http with ws or https with wss
-      const wsUrl = url.replace(/^http/, "ws");
-      const socket = new WebSocket(wsUrl);
+      send({ view: "barista_orders" });
 
-      socket.addEventListener("open", () => {
-        console.log("Socket opened");
-
-        const message: OrderLiveViews = {
-          view: "barista_orders",
-        };
-
-        socket.send(JSON.stringify(message));
-      });
-
-      socket.addEventListener("message", (event) => {
-        const data: BaristaOrdersView = JSON.parse(event.data);
-
-        console.log("Received message from socket", data);
-
+      on((data) => {
+        // console.log("Received message from socket", data);
         if (data.view !== "barista_orders") return;
         if (!data.orders) return;
-
-        console.log(data);
 
         callback(data.orders);
       });
 
-      return () => socket.close(1000, "Cleanup");
+      return () => send("close");
     },
   };
 }
 
-export function createServerlesspressoClient(url: string, f = myFetch) {
+export function createServerlesspressoClient(
+  httpUrl: string,
+  wsUrl: string,
+  f = myFetch,
+  w = myWs
+) {
+  const { on, send } = w(wsUrl);
   return {
-    barista: baristaApiClient(url, f),
-    customer: customerApiClient(url, f),
-    customerLiveview: customerLiveview(url),
-    baristaLiveview: baristaLiveview(url),
+    barista: baristaApiClient(httpUrl, f),
+    customer: customerApiClient(httpUrl, f),
+    customerLiveview: customerLiveview(on, send),
+    baristaLiveview: baristaLiveview(on, send),
   };
 }

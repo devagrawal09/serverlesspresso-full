@@ -16,8 +16,20 @@ fastifyApp.register(CustomerApi, { prefix: "/customer" });
 fastifyApp.register(BaristaApi, { prefix: "/barista" });
 
 // setup liveviews
-BaristaLiveview();
-CustomerLiveview();
+BaristaLiveview({
+  on(cb) {
+    ws.on("message", (c, m) => cb(c.connectionId, m));
+    ws.on("disconnected", (c, r) => cb(c.connectionId, "close"));
+  },
+  send: (c, m) => ws.send(c, m),
+});
+CustomerLiveview({
+  on(cb) {
+    ws.on("message", (c, m) => cb(c.connectionId, m));
+    ws.on("disconnected", (c, r) => cb(c.connectionId, "close"));
+  },
+  send: (c, m) => ws.send(c, m),
+});
 
 http.useNodeHandler(fastifyApp);
 

@@ -1,5 +1,4 @@
 import { data } from "@ampt/data";
-import { ws } from "@ampt/sdk";
 import { BaristaOrdersView, OrderLiveViews } from "../../../types/orders";
 import { Orders } from "./orders";
 
@@ -14,17 +13,36 @@ const BaristaSubscriptions = {
   },
 };
 
-export const BaristaLiveview = () => {
-  const customerSubscriptions = BaristaSubscriptions;
+export const BaristaLiveview = ({
+  on,
+  send,
+}: {
+  on: (
+    cb: (connection: string, message: OrderLiveViews | "close") => Promise<any>
+  ) => void;
+  send: (connection: string, message: BaristaOrdersView) => Promise<any>;
+}) => {
+  const baristaSubscriptions = BaristaSubscriptions;
   const orders = Orders;
 
-  ws.on("message", async (connection, message: OrderLiveViews) => {
-    if (message.view === "barista_orders") {
-      const subscriptions = await customerSubscriptions.get();
+  on(async (connection, message) => {
+    if (message === "close") {
+      const subscriptions = await baristaSubscriptions.get();
 
-      if (!subscriptions.includes(connection.connectionId)) {
-        subscriptions.push(connection.connectionId);
-        await customerSubscriptions.set(subscriptions);
+      if (!subscriptions?.length) return;
+
+      const index = subscriptions.indexOf(connection);
+
+      if (index > -1) {
+        subscriptions.splice(index, 1);
+        await baristaSubscriptions.set(subscriptions);
+      }
+    } else if (message.view === "barista_orders") {
+      const subscriptions = await baristaSubscriptions.get();
+
+      if (!subscriptions.includes(connection)) {
+        subscriptions.push(connection);
+        await baristaSubscriptions.set(subscriptions);
       }
 
       const ordersData = await orders.getAllOrders();
@@ -34,26 +52,13 @@ export const BaristaLiveview = () => {
         orders: ordersData,
       };
 
-      await connection.send(message);
-    }
-  });
-
-  ws.on("disconnected", async (connection, reason) => {
-    const subscriptions = await customerSubscriptions.get();
-
-    if (!subscriptions?.length) return;
-
-    const index = subscriptions.indexOf(connection.connectionId);
-
-    if (index > -1) {
-      subscriptions.splice(index, 1);
-      await customerSubscriptions.set(subscriptions);
+      send(connection, message);
     }
   });
 
   orders.onOrderUpdate(async (e, o) => {
-    console.debug("updating barista view");
-    const subscriptions = await customerSubscriptions.get();
+    // console.debug("updating barista view");
+    const subscriptions = await baristaSubscriptions.get();
 
     if (!subscriptions?.length) return;
 
@@ -65,7 +70,7 @@ export const BaristaLiveview = () => {
     };
 
     await Promise.all(
-      subscriptions.map((connectionId) => ws.send(connectionId, message))
+      subscriptions.map((connection) => send(connection, message))
     );
   });
 };
