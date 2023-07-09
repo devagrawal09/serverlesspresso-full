@@ -77,6 +77,13 @@ async function ensureStoreIsOpen() {
   }
 }
 
+async function cleanupOrders() {
+  const orders = await data.get<Order>("order:*", { meta: true });
+  (await orders.items.length)
+    ? data.remove(orders.items.map((o) => o.key))
+    : null;
+}
+
 describe("serverlesspresso", () => {
   beforeEach(ensureStoreIsOpen);
 
@@ -221,12 +228,7 @@ describe("serverlesspresso", () => {
   });
 
   describe("barista view", () => {
-    beforeEach(async () => {
-      const orders = await data.get<Order>("order:*", { meta: true });
-      (await orders.items.length)
-        ? data.remove(orders.items.map((o) => o.key))
-        : null;
-    });
+    beforeEach(cleanupOrders);
 
     test("placed order shows up in barista's orders", () =>
       withSubscription(
@@ -295,12 +297,7 @@ describe("serverlesspresso", () => {
   });
 
   describe("customer view", () => {
-    beforeEach(async () => {
-      const orders = await data.get<Order>("order:*", { meta: true });
-      (await orders.items.length)
-        ? data.remove(orders.items.map((o) => o.key))
-        : null;
-    });
+    beforeEach(cleanupOrders);
 
     test("customer is notified when order is preparing", () =>
       withSubscription(
