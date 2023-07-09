@@ -7,11 +7,12 @@
   "type": "module",
   "scripts": {
     "start": "ampt",
-    "ampt:test": "vitest --config ./vitest.config.ts"
+    "test": "ampt run test --test-stage",
+    "ampt:test": "vitest --config ./vitest.config.ts --ui"
   },
   "dependencies": {
     "@ampt/api": "^0.0.1-beta.9",
-    "@ampt/data": "^0.0.1-beta.12",
+    "@ampt/data": "^0.0.1-beta.14",
     "@fastify/cors": "^8.2.1",
     "cors": "^2.8.5",
     "fastify": "^4.15.0",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@faker-js/faker": "^8.0.0",
     "@types/uuid": "^9.0.1",
+    "@vitest/ui": "^0.33.0",
     "vitest": "^0.31.0"
   },
   "files": [

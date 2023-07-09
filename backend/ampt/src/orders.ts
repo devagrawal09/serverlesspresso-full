@@ -43,12 +43,31 @@ async function placeOrder(input: {
   return placed as Order;
 }
 
-async function prepareOrder(id: string) {
+async function markOrderAsPreparing(id: string) {
   const order = await getOrderById(id);
 
   if (order instanceof OrderNotFoundError) return order;
 
-  if (order.status !== "placed") return new OrderAlreadyPreparedError();
+  if (order.status !== "placed") return new OrderAlreadyPreparingError();
+
+  order.status = "preparing";
+  order.log.push({
+    type: "order preparing",
+    id: uuid(),
+    timestamp: new Date().toISOString(),
+  });
+
+  const preparing = await data.set<Order>(`order:${id}`, order);
+
+  return preparing as Order;
+}
+
+async function markOrderAsPrepared(id: string) {
+  const order = await getOrderById(id);
+
+  if (order instanceof OrderNotFoundError) return order;
+
+  if (order.status !== "preparing") return new OrderAlreadyPreparedError();
 
   order.status = "prepared";
   order.log.push({
@@ -62,7 +81,7 @@ async function prepareOrder(id: string) {
   return prepared as Order;
 }
 
-async function pickUpOrder(id: string) {
+async function markOrderAsPickedUp(id: string) {
   const order = await getOrderById(id);
 
   if (order instanceof OrderNotFoundError) return order;
@@ -86,7 +105,8 @@ async function cancelOrder(id: string) {
 
   if (order instanceof OrderNotFoundError) return order;
 
-  if (order.status !== "placed") return new OrderAlreadyPreparedError();
+  if (order.status === "picked up") return new OrderAlreadyPickedUp();
+  if (order.status === "cancelled") return new OrderAlreadyCancelled();
 
   order.status = "cancelled";
   order.log.push({
@@ -109,21 +129,45 @@ async function getOrdersByCustomerId(customerId: string) {
   return (orderData as any).items.map(({ key, value }) => value) as Order[];
 }
 
+async function getCurrentOrderForCustomer(customerId: string) {
+  const orders = await getOrdersByCustomerId(customerId);
+
+  return orders.find((order) => order.status !== "picked up");
+}
+
 export class OrderNotFoundError extends Error {
   constructor() {
     super("Order not found");
   }
 }
 
+export class OrderAlreadyPreparingError extends Error {
+  constructor() {
+    super("Order already preparing");
+  }
+}
+
 export class OrderAlreadyPreparedError extends Error {
   constructor() {
-    super("Order already prepared");
+    super("Order cannot be prepared");
   }
 }
 
 export class OrderCannotBePickedUp extends Error {
   constructor() {
     super("Order cannot be picked up");
+  }
+}
+
+export class OrderAlreadyPickedUp extends Error {
+  constructor() {
+    super("Order already picked up");
+  }
+}
+
+export class OrderAlreadyCancelled extends Error {
+  constructor() {
+    super("Order already cancelled");
   }
 }
 
@@ -142,9 +186,11 @@ export const Orders = {
   getOrderById,
   getAllOrders,
   placeOrder,
-  prepareOrder,
-  pickUpOrder,
+  markOrderAsPreparing,
+  markOrderAsPrepared,
+  markOrderAsPickedUp,
   cancelOrder,
   getOrdersByCustomerId,
+  getCurrentOrderForCustomer,
   onOrderUpdate,
 };

@@ -1,155 +1,163 @@
 import type { BaristaOrdersView } from "../../types/orders";
 import type {
-  CustomerOrdersView,
+  CustomerOrderView,
   Order,
   OrderLiveViews,
 } from "../../types/orders";
 
-function baristaApiClient(url: string) {
-  async function getStore() {
-    const res = await fetch(`${url}/store`);
-    const result: { open: boolean } = await res.json();
-    return result;
+async function myFetch(url: string, options?: RequestInit) {
+  const res = await fetch(url, options);
+  if (res.status >= 400) {
+    throw new Error(await res.text());
   }
-
-  async function toggleStore() {
-    const res = await fetch(`${url}/store`, {
-      method: "PUT",
-    });
-    const result: { open: boolean } = await res.json();
-    return result;
-  }
-
-  async function prepareOrder(id: string) {
-    const res = await fetch(`${url}/prepare/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  async function markOrderAsPrepred(id: string) {
-    const res = await fetch(`${url}/prepared/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  async function markOrderAsPickedUp(id: string) {
-    const res = await fetch(`${url}/picked-up/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  async function cancelOrder(id: string) {
-    const res = await fetch(`${url}/cancel/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  return { getStore, toggleStore, prepareOrder };
+  return res;
 }
 
-function customerApiClient(url: string) {
-  async function placeOrder(userId: string) {
-    const res = await fetch(`${url}/customer/orders`, {
+function baristaApiClient(url: string, f: typeof myFetch) {
+  return {
+    async getStore() {
+      const res = await f(`${url}/barista/store`);
+      const result: { open: boolean } = await res.json();
+      return result;
+    },
+    async toggleStore() {
+      const res = await f(`${url}/barista/store`, {
+        method: "PUT",
+      });
+      const result: { open: boolean } = await res.json();
+      return result;
+    },
+    async markOrderAsPreparing(id: string) {
+      const res = await f(`${url}/barista/preparing/${id}`, {
+        method: "PUT",
+      });
+      return await res.json();
+    },
+    async markOrderAsPrepared(id: string) {
+      const res = await f(`${url}/barista/prepared/${id}`, {
+        method: "PUT",
+      });
+      return await res.json();
+    },
+    async markOrderAsPickedUp(id: string) {
+      const res = await f(`${url}/barista/picked-up/${id}`, {
+        method: "PUT",
+      });
+      return await res.json();
+    },
+    async cancelOrder(id: string) {
+      const res = await f(`${url}/barista/cancel/${id}`, {
+        method: "PUT",
+      });
+      return await res.json();
+    },
+  };
+}
+
+function customerApiClient(url: string, f: typeof myFetch) {
+  async function placeOrder(customerId: string, productId: string) {
+    const res = await f(`${url}/customer/orders`, {
       method: "POST",
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ customerId, productId }),
       headers: { "Content-Type": "application/json" },
     });
     return (await res.json()) as Order;
   }
 
   async function getOrder(id: string) {
-    const res = await fetch(`${url}/customer/orders/${id}`);
-    return await res.json();
+    const res = await f(`${url}/customer/orders/${id}`);
+    return (await res.json()) as Order;
   }
 
   async function cancelOrder(id: string) {
-    const res = await fetch(`${url}/customer/orders/${id}`, {
+    const res = await f(`${url}/customer/orders/${id}`, {
       method: "DELETE",
     });
-    return await res.json();
+    return (await res.json()) as Order;
   }
 
-  return { placeOrder, getOrder, cancelOrder };
+  async function getOrders(customerId: string) {
+    const res = await f(`${url}/customer/${customerId}/orders`);
+    return (await res.json()) as Order[];
+  }
+
+  return { placeOrder, getOrder, cancelOrder, getOrders };
 }
 
 function customerLiveview(url: string) {
-  function subscribe(customerId: string, callback: (orders: Order[]) => void) {
-    // replace http with ws or https with wss
-    const wsUrl = url.replace(/^http/, "ws");
-    const socket = new WebSocket(wsUrl);
+  return {
+    subscribe(customerId: string, callback: (order: Order) => void) {
+      // replace http with ws or https with wss
+      const wsUrl = url.replace(/^http/, "ws");
+      const socket = new WebSocket(wsUrl);
 
-    socket.addEventListener("open", () => {
-      console.log("Socket opened");
+      socket.addEventListener("open", () => {
+        console.log("Socket opened");
 
-      const message: OrderLiveViews = {
-        view: "customer_orders",
-        customerId,
-      };
+        const message: OrderLiveViews = {
+          view: "customer_orders",
+          customerId,
+        };
 
-      socket.send(JSON.stringify(message));
-    });
+        socket.send(JSON.stringify(message));
+      });
 
-    socket.addEventListener("message", (event) => {
-      const data: CustomerOrdersView = JSON.parse(event.data);
+      socket.addEventListener("message", (event) => {
+        const data: CustomerOrderView = JSON.parse(event.data);
 
-      console.log("Received message from socket", data);
-      if (data.view !== "customer_orders") return;
-      if (!data.orders) return;
+        console.log("Received message from socket", data);
+        if (data.view !== "customer_order") return;
+        if (!data.order) return;
 
-      console.log(data);
+        console.log(data);
 
-      callback(data.orders);
-    });
+        callback(data.order);
+      });
 
-    return () => socket.close(1000, "Cleanup");
-  }
-
-  return { subscribe };
+      return () => socket.close(1000, "Cleanup");
+    },
+  };
 }
 
 function baristaLiveview(url: string) {
-  function subscribe(callback: (orders: Order[]) => void) {
-    // replace http with ws or https with wss
-    const wsUrl = url.replace(/^http/, "ws");
-    const socket = new WebSocket(wsUrl);
+  return {
+    subscribe(callback: (orders: Order[]) => void) {
+      // replace http with ws or https with wss
+      const wsUrl = url.replace(/^http/, "ws");
+      const socket = new WebSocket(wsUrl);
 
-    socket.addEventListener("open", () => {
-      console.log("Socket opened");
+      socket.addEventListener("open", () => {
+        console.log("Socket opened");
 
-      const message: OrderLiveViews = {
-        view: "barista_orders",
-      };
+        const message: OrderLiveViews = {
+          view: "barista_orders",
+        };
 
-      socket.send(JSON.stringify(message));
-    });
+        socket.send(JSON.stringify(message));
+      });
 
-    socket.addEventListener("message", (event) => {
-      const data: BaristaOrdersView = JSON.parse(event.data);
+      socket.addEventListener("message", (event) => {
+        const data: BaristaOrdersView = JSON.parse(event.data);
 
-      console.log("Received message from socket", data);
+        console.log("Received message from socket", data);
 
-      if (data.view !== "barista_orders") return;
-      if (!data.orders) return;
+        if (data.view !== "barista_orders") return;
+        if (!data.orders) return;
 
-      console.log(data);
+        console.log(data);
 
-      callback(data.orders);
-    });
+        callback(data.orders);
+      });
 
-    return () => socket.close(1000, "Cleanup");
-  }
-
-  return { subscribe };
+      return () => socket.close(1000, "Cleanup");
+    },
+  };
 }
 
-export function createServerlesspressoClient(url: string) {
+export function createServerlesspressoClient(url: string, f = myFetch) {
   return {
-    barista: baristaApiClient(`${url}/barista`),
-    customer: customerApiClient(`${url}/customer`),
+    barista: baristaApiClient(url, f),
+    customer: customerApiClient(url, f),
     customerLiveview: customerLiveview(url),
     baristaLiveview: baristaLiveview(url),
   };

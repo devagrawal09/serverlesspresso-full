@@ -2,7 +2,7 @@ export interface Order {
   id: string;
   productId: string;
   customerId: string;
-  status: "placed" | "prepared" | "picked up" | "cancelled";
+  status: "placed" | "preparing" | "prepared" | "picked up" | "cancelled";
 
   log: OrderEvent[];
 }
@@ -12,6 +12,12 @@ export type OrderPlaced = {
   id: string;
   productId: string;
   customerId: string;
+  timestamp: string;
+};
+
+export type OrderPreparing = {
+  type: "order preparing";
+  id: string;
   timestamp: string;
 };
 
@@ -35,6 +41,7 @@ export type OrderCancelled = {
 
 export type OrderEvent =
   | OrderPlaced
+  | OrderPreparing
   | OrderPrepared
   | OrderPickedUp
   | OrderCancelled;
@@ -48,8 +55,8 @@ export type BaristaOrdersView = {
   orders: Order[];
 };
 
-export type CustomerOrdersView = {
-  view: "customer_orders";
-  orders: Order[];
+export type CustomerOrderView = {
+  view: "customer_order";
+  order?: Order;
   customerId: string;
 };

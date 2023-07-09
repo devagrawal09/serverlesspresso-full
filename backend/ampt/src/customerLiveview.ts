@@ -1,7 +1,7 @@
 import { data } from "@ampt/data";
 import { ws } from "@ampt/sdk";
 import { Orders } from "./orders";
-import { CustomerOrdersView, OrderLiveViews } from "../../../types/orders";
+import { CustomerOrderView, OrderLiveViews } from "../../../types/orders";
 
 type CustomerSubscription = { customerId: string; connectionId: string };
 
@@ -41,11 +41,11 @@ export const CustomerLiveview = () => {
         await customerSubscriptions.set(subscriptions);
       }
 
-      const ordersData = await orders.getOrdersByCustomerId(customerId);
+      const order = await orders.getCurrentOrderForCustomer(customerId);
 
-      const send: CustomerOrdersView = {
-        view: "customer_orders",
-        orders: ordersData,
+      const send: CustomerOrderView = {
+        view: "customer_order",
+        order,
         customerId,
       };
 
@@ -73,11 +73,11 @@ export const CustomerLiveview = () => {
 
     if (!subscriptions?.length) return;
 
-    const ordersData = await orders.getOrdersByCustomerId(customerId);
+    const order = await orders.getCurrentOrderForCustomer(customerId);
 
-    const message: CustomerOrdersView = {
-      view: "customer_orders",
-      orders: ordersData,
+    const message: CustomerOrderView = {
+      view: "customer_order",
+      order,
       customerId,
     };
 

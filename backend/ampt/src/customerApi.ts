@@ -7,7 +7,10 @@ import {
 import { z } from "zod";
 import { Store } from "./store";
 
-const placeOrderSchema = z.object({ userId: z.string() });
+const placeOrderSchema = z.object({
+  customerId: z.string(),
+  productId: z.string(),
+});
 
 export const CustomerApi: FastifyPluginAsync = async (fastify) => {
   const store = Store;
@@ -18,21 +21,24 @@ export const CustomerApi: FastifyPluginAsync = async (fastify) => {
       const storeOpen = await store.isStoreOpen();
 
       if (!storeOpen) {
-        return res.status(400).send({ error: "Store is closed" });
+        return res.status(400).send("Store is closed");
       }
 
       const body = req.body;
-      const { userId } = placeOrderSchema.parse(body);
+      const result = placeOrderSchema.safeParse(body);
 
-      const order = await orders.placeOrder({
-        customerId: userId,
-        productId: "espresso",
-      });
+      if (!result.success) {
+        return res.status(400).send(result.error.toString());
+      }
+
+      const { customerId, productId } = result.data;
+
+      const order = await orders.placeOrder(result.data);
 
       return res.status(201).send(order);
     } catch (e) {
-      console.error(e);
-      return res.status(500).send({ error: e });
+      console.error({ e });
+      return res.status(500).send(e.message);
     }
   });
 
@@ -43,12 +49,11 @@ export const CustomerApi: FastifyPluginAsync = async (fastify) => {
       const order = await orders.getOrderById(id);
 
       if (order instanceof OrderNotFoundError) {
-        return res.status(404).send({ error: order.message });
+        return res.status(404).send(order.message);
       }
-      console.log("order", order);
       return res.status(200).send(order);
     } catch (e) {
-      return res.status(500).send({ error: e });
+      return res.status(500).send(e.message);
     }
   });
 
@@ -59,16 +64,16 @@ export const CustomerApi: FastifyPluginAsync = async (fastify) => {
       const order = await orders.cancelOrder(id);
 
       if (order instanceof OrderNotFoundError) {
-        return res.status(404).send({ error: order.message });
+        return res.status(404).send(order.message);
       }
 
       if (order instanceof OrderAlreadyPreparedError) {
-        return res.status(400).send({ error: order.message });
+        return res.status(400).send(order.message);
       }
 
       return res.status(200).send(order);
     } catch (e) {
-      return res.status(500).send({ error: e });
+      return res.status(500).send(e.message);
     }
   });
 
