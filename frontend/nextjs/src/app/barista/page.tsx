@@ -1,25 +1,10 @@
+import { client } from "../client";
 import { BaristaOrders } from "./orders";
 import { ToggleStore } from "./toggle-store";
 
 export default async function BaristaApp() {
-  const result = await fetch(
-    `https://brilliant-idea-n2c95.ampt.app/barista/store`,
-    {
-      cache: "no-store",
-    }
-  );
-
-  const data: { open: boolean } = await result.json();
-
-  if (result.status !== 200) {
-    console.log(data);
-    return (
-      <>
-        <h1>Failed to load store</h1>
-      </>
-    );
-  }
-
+  const data = await client.barista.getStore();
+  console.log({ data });
   return (
     <>
       <header className="flex justify-between m-6">

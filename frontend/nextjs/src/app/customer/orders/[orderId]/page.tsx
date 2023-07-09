@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
-import { Order } from "../../../../../../../types/orders";
 import { client } from "@/app/client";
+import { data } from "autoprefixer";
 
 export default async function OrderPage({
   params,
@@ -8,12 +8,10 @@ export default async function OrderPage({
   params: { orderId: string };
 }) {
   const result = await client.customer.getOrder(params.orderId);
-
-  const data: Order = await result.json();
-
-  if (result.status !== 200) {
-    return <h1>Failed to load order</h1>;
-  }
+  console.log({ result });
+  // if (result.status !== 200) {
+  //   return <h1>Failed to load order</h1>;
+  // }
 
   return (
     <>
@@ -31,11 +29,11 @@ export default async function OrderPage({
         </div>
         <div className="px-6 py-3">
           <p className="text-lg font-bold">
-            {DateTime.fromISO(data.log[0].timestamp).toLocaleString(
+            {DateTime.fromISO(result.log[0].timestamp).toLocaleString(
               DateTime.DATETIME_MED
             )}
           </p>
-          <p className="text-lg font-bold">Status: {data.status}</p>
+          <p className="text-lg font-bold">Status: {result.status}</p>
         </div>
       </div>
     </>

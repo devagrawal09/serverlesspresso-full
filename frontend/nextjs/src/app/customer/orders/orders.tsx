@@ -7,9 +7,8 @@ import { Order } from "../../../../../../types/orders";
 import { client } from "@/app/client";
 
 export function CustomerOrders() {
-  const [isLoading, setIsLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>();
-
+  console.log({ orders });
   useEffect(
     () => client.customerLiveview.subscribe(`devagrawal09`, setOrders),
     []
@@ -22,11 +21,11 @@ export function CustomerOrders() {
   return (
     <>
       <h2 className="text-2xl text-center">Orders</h2>
-      {isLoading ? (
+      {!orders ? (
         <p>Loading...</p>
       ) : (
         <ul>
-          {orders?.map((order) => (
+          {orders.map((order) => (
             <li
               key={order.id}
               className="border border-white mx-16 my-5 rounded"

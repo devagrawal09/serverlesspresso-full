@@ -1,9 +1,9 @@
-import type { BaristaOrdersView } from "../../types/orders";
-import type {
-  CustomerOrdersView,
+import {
   Order,
   OrderLiveViews,
-} from "../../types/orders";
+  CustomerOrdersView,
+  BaristaOrdersView,
+} from "../../../../types/orders";
 
 function baristaApiClient(url: string) {
   async function getStore() {
@@ -27,27 +27,6 @@ function baristaApiClient(url: string) {
     return await res.json();
   }
 
-  async function markOrderAsPrepred(id: string) {
-    const res = await fetch(`${url}/prepared/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  async function markOrderAsPickedUp(id: string) {
-    const res = await fetch(`${url}/picked-up/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
-  async function cancelOrder(id: string) {
-    const res = await fetch(`${url}/cancel/${id}`, {
-      method: "PUT",
-    });
-    return await res.json();
-  }
-
   return { getStore, toggleStore, prepareOrder };
 }
 
@@ -63,14 +42,14 @@ function customerApiClient(url: string) {
 
   async function getOrder(id: string) {
     const res = await fetch(`${url}/customer/orders/${id}`);
-    return await res.json();
+    return (await res.json()) as Order;
   }
 
   async function cancelOrder(id: string) {
     const res = await fetch(`${url}/customer/orders/${id}`, {
       method: "DELETE",
     });
-    return await res.json();
+    return (await res.json()) as Order;
   }
 
   return { placeOrder, getOrder, cancelOrder };
